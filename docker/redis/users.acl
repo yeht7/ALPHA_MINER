@@ -1,0 +1,2 @@
+user default on >redis_admin_pass ~* &* +@all
+user agent on >agent_redis_pass ~* &* +@all -@admin -@dangerous -flushall -flushdb -debug -shutdown -config -replicaof -slaveof -cluster -migrate -restore -dump -bgsave -bgrewriteaof -save -acl -module -swapdb -object -wait -keys

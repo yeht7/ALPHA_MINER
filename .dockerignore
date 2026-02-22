@@ -1,0 +1,16 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+.env
+.venv
+venv
+node_modules
+.pytest_cache
+.mypy_cache
+*.egg-info
+dist
+build
+docker/mysql/data
+*.log

@@ -1,0 +1,110 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: engine-app
+    volumes:
+      - .:/workspace
+    ports:
+      - "8000:8000"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${AGENT_MYSQL_USER:-agent}
+      - MYSQL_PASSWORD=${AGENT_MYSQL_PASSWORD:-agent_safe_pass}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-engine_db}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_USER=${AGENT_REDIS_USER:-agent}
+      - REDIS_PASSWORD=${AGENT_REDIS_PASSWORD:-agent_redis_pass}
+      - IB_GATEWAY_HOST=${IB_GATEWAY_HOST:-host.docker.internal}
+      - IB_GATEWAY_PORT=${IB_GATEWAY_PORT:-4002}
+      - IB_CLIENT_ID=${IB_CLIENT_ID:-1}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    networks:
+      - engine-net
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  mysql:
+    image: mysql:8.0
+    container_name: engine-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-engine_db}
+      MYSQL_USER: ${MYSQL_USER:-engine}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-engine_pass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - engine-net
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  redis:
+    image: redis:7-alpine
+    container_name: engine-redis
+    command: ["redis-server", "--aclfile", "/etc/redis/users.acl"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+      - ./docker/redis/users.acl:/etc/redis/users.acl:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "-u", "redis://default:redis_admin_pass@localhost:6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - engine-net
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  engine-net:
+    driver: bridge

@@ -1,0 +1,23 @@
+{
+  "name": "ENGINE Dev",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/workspace/.venv/bin/python",
+        "python.analysis.typeCheckingMode": "basic"
+      }
+    }
+  },
+  "remoteEnv": {
+    "PATH": "/workspace/.venv/bin:/usr/local/bin:/usr/bin:/bin:${containerEnv:PATH}"
+  }
+}

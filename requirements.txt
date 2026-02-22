@@ -1,0 +1,11 @@
+mysqlclient
+redis
+sqlalchemy
+alembic
+python-dotenv
+requests
+httpx
+fastapi
+uvicorn[standard]
+pytest
+ipython
