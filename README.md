@@ -33,8 +33,17 @@ evaluation/          # Part 4 – 绩效评估 & Tear Sheet
   plotting.py        # EvaluationPlotter 绘图引擎
   tearsheet.py       # Tear Sheet 一键生成
 
+execution/           # Part 5 – 模拟盘执行引擎
+  state_manager.py   # PortfolioManager：持仓 & NLV 同步
+  target_translator.py # 目标权重 → 股数差额计算
+  risk_manager.py    # 风控拦截（仓位上限 / 杠杆 / 黑名单）
+  router.py          # OrderRouter：MKT / MOC / LMT 下单
+  tracker.py         # 异步成交追踪 & Parquet 日志
+  main_job.py        # 完整 Rebalance 循环入口
+
 data_cache/          # 自动生成 – OHLCV Parquet 缓存
 signals/             # 自动生成 – 因子信号 Parquet 输出
+trade_logs/          # 自动生成 – 成交日志（Parquet）
 
 inspect_data.py      # 数据查询 CLI 工具
 main.py              # 端到端运行示例（因子→回测→Tear Sheet）
@@ -158,6 +167,36 @@ python inspect_data.py show ShortTermReversal --describe
 python inspect_data.py stats AAPL
 ```
 
+### 7. 运行模拟盘 Rebalance（Paper Trading）
+
+> **前置条件：** IB Gateway (Paper Trading) 运行在 `localhost:4002`，且 `data_cache/` 中已有历史数据。
+
+```python
+import asyncio
+from execution.main_job import run_rebalance_cycle
+
+# Dry Run（默认）——只打印预期订单，不实际下单
+asyncio.run(run_rebalance_cycle(dry_run=True))
+
+# 真实下单到模拟盘
+asyncio.run(run_rebalance_cycle(
+    dry_run=False,
+    order_type="MKT",              # 支持 "MKT" / "MOC" / "LMT"
+    max_position_pct=0.05,         # 单笔交易 ≤ 5% NLV
+    max_gross_leverage=1.0,        # 总杠杆上限
+    restricted=["GME", "AMC"],     # 黑名单
+))
+
+# 定时循环（每日执行一次）
+from execution.main_job import run_scheduled
+asyncio.run(run_scheduled(interval_seconds=86400, dry_run=True))
+```
+
+```bash
+# 命令行一键执行（dry-run）
+python -m execution.main_job
+```
+
 ## 如何新增自定义因子
 
 只需三步：
@@ -230,6 +269,52 @@ def test_my_factor_no_lookahead(self):
 | `plotting` | `EvaluationPlotter` — IC 时序图、桶累计收益线图、桶平均收益柱状图（原始 & Demean）、行业敞口堆积面积图 |
 | `tearsheet` | `create_full_tearsheet()` — 用 `gridspec` 组装单页 Dashboard 并输出 PNG/PDF |
 
+## 执行引擎设计
+
+| 模块 | 职责 |
+|------|------|
+| `state_manager` | `PortfolioManager` — 从 IB Gateway 读取持仓快照、账户 NLV、实时行情价格 |
+| `target_translator` | `calculate_order_delta()` — 目标权重 × NLV → 目标股数 → 与当前持仓做差 → `OrderDelta` 列表 |
+| `risk_manager` | `RiskController` — 三重拦截：单票仓位超限 / 总杠杆超限 / 黑名单股票 |
+| `router` | `OrderRouter` — 构造 `ib_async` 合约 + 订单对象，支持 MKT / MOC / LMT，`dry_run` 安全开关 |
+| `tracker` | `TradeTracker` — 订阅 `orderStatusEvent` 异步追踪成交状态，flush 到 `trade_logs/` Parquet |
+| `main_job` | `run_rebalance_cycle()` — 一键编排完整链路：Alpha → IB 连接 → 状态同步 → Delta → 风控 → 下单 → 成交追踪 |
+
+### Rebalance 数据流
+
+```
+┌─────────────┐    ┌──────────────┐    ┌───────────────┐    ┌──────────────┐
+│ Alpha Miner │───▶│   Delta Eng  │───▶│ Risk Manager  │───▶│ Order Router │
+│  (weights)  │    │ (share delta)│    │  (validate)   │    │  (MKT/LMT)  │
+└─────────────┘    └──────────────┘    └───────────────┘    └──────┬───────┘
+       ▲                  ▲                                        │
+       │                  │                                        ▼
+┌──────┴──────┐    ┌──────┴──────┐                          ┌─────────────┐
+│ Factor Pipe │    │  Portfolio  │                          │   Tracker   │
+│  + Backtest │    │  Manager    │                          │ (fills log) │
+│  Allocator  │    │ (IB state)  │                          └──────┬──────┘
+└─────────────┘    └─────────────┘                                 │
+                                                                   ▼
+                                                            trade_logs/*.parquet
+```
+
+### 风控参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `max_position_pct` | 5% | 单笔交易金额 ≤ NLV × 5% |
+| `max_gross_leverage` | 1.0 | Σ\|target_weight\| ≤ 1.0，超限时拒绝全部订单 |
+| `restricted_list` | `[]` | 黑名单 ticker，命中则跳过该订单 |
+| `dry_run` | `True` | **硬编码默认安全**——仅日志输出，不实际下单 |
+
+### 订单类型
+
+| 类型 | 说明 |
+|------|------|
+| `MKT` | Market Order，立即成交（默认） |
+| `MOC` | Market-on-Close，收盘前集合竞价成交 |
+| `LMT` | Limit Order，需传入 `limit_prices` 字典指定限价 |
+
 ## 关键约束
 
 | 规则 | 说明 |
@@ -239,6 +324,8 @@ def test_my_factor_no_lookahead(self):
 | **无前瞻偏差** | T 时刻的因子值只能使用 t ≤ T 的数据，用 rolling / ewm 系列函数自动保证 |
 | **可扩展到 C++/CUDA** | `compute()` 接口足够简单，内部可替换为 native kernel 调用 |
 | **权重与 PnL 解耦** | `generate_weights()` 独立输出目标权重，可直接对接 Alpha Arena 等实盘平台 |
+| **Dry Run 优先** | 执行引擎默认 `dry_run=True`，只记录日志不实际下单 |
+| **成交日志持久化** | 每笔成交（价格、数量、时间、佣金）写入 `trade_logs/` Parquet，用于 Backtest vs Paper 滑点分析 |
 
 ## 测试
 

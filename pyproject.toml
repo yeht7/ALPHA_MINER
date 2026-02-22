@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
+    "huggingface-hub>=1.4.1",
     "ib-async>=2.1.0",
     "ib-insync>=0.9.86",
     "ibapi-latest==10.43.2",
