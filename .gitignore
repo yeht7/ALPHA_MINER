@@ -17,8 +17,7 @@ wheels/
 # Package lock
 uv.lock
 
-# Data (Parquet caches & signals)
-data_cache/
+# Data (signals)
 signals/
 
 # Output (generated tearsheets / reports)
