@@ -109,6 +109,39 @@ def _resolve_path(name: str) -> Path:
 
 
 # ------------------------------------------------------------------
+# Factor query
+# ------------------------------------------------------------------
+
+def _query_signal(
+    factor: str,
+    ticker: str | None,
+    date: str | None,
+    top: int,
+    sort_desc: bool,
+) -> None:
+    path = SIGNAL_DIR / f"{factor}.parquet"
+    if not path.exists():
+        print(f"信号文件不存在: {path}")
+        return
+
+    df = pl.read_parquet(path)
+
+    if ticker:
+        df = df.filter(pl.col("ticker") == ticker.upper())
+    if date:
+        prefix = date.replace(".", "-")
+        df = df.filter(pl.col("datetime").cast(pl.Utf8).str.starts_with(prefix))
+
+    df = df.sort("factor_value", descending=sort_desc)
+
+    print(f"\n{'═'*60}")
+    print(f"  Factor: {factor}  |  ticker={ticker or 'ALL'}  |  date={date or 'ALL'}")
+    print(f"  匹配 {len(df)} 行 (显示 top {min(top, len(df))})")
+    print(f"{'═'*60}\n")
+    print(df.head(top))
+
+
+# ------------------------------------------------------------------
 # CLI
 # ------------------------------------------------------------------
 
@@ -134,6 +167,19 @@ def main() -> None:
     st = sub.add_parser("stats", help="对某个文件输出统计摘要")
     st.add_argument("name", help="文件名/路径")
 
+    # query
+    q = sub.add_parser(
+        "query",
+        help="查询因子信号值\n"
+             "  例: query ShortTermReversal -t AAPL -d 2024-01\n"
+             "      query ShortTermReversal -d 2024-01-08 --top 20",
+    )
+    q.add_argument("factor", help="因子名称，如 ShortTermReversal")
+    q.add_argument("-t", "--ticker", help="股票代码，如 AAPL")
+    q.add_argument("-d", "--date", help="日期前缀，如 2024-01-08 或 2024-01（支持 . 或 - 分隔）")
+    q.add_argument("--top", type=int, default=20, help="最多显示行数 (默认 20)")
+    q.add_argument("--asc", action="store_true", help="按 factor_value 升序排列（默认降序）")
+
     args = parser.parse_args()
 
     if args.command is None or args.command == "ls":
@@ -150,6 +196,9 @@ def main() -> None:
     elif args.command == "stats":
         path = _resolve_path(args.name)
         _show_detail(path, head=0, tail=0, describe=True)
+
+    elif args.command == "query":
+        _query_signal(args.factor, args.ticker, args.date, args.top, sort_desc=not args.asc)
 
     else:
         parser.print_help()

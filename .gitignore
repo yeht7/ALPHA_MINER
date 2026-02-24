@@ -17,8 +17,13 @@ wheels/
 # Package lock
 uv.lock
 
-# Data (signals)
+# Data (signals / cache)
 signals/
+data_cache/
+
+# Execution logs & snapshots
+trade_logs/
+account_snapshots/
 
 # Output (generated tearsheets / reports)
 output/

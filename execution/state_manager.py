@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from ib_async import IB
@@ -27,11 +28,11 @@ class PortfolioManager:
 
     async def get_account_value(self) -> float:
         """Return Net Liquidation Value (NLV) from the account summary."""
-        summary = self._ib.accountSummary()
+        summary = await self._ib.accountSummaryAsync()
         for item in summary:
             if item.tag == "NetLiquidation" and item.currency == "USD":
                 nlv = float(item.value)
-                logger.info("Account NLV = $%,.2f", nlv)
+                logger.info("Account NLV = $%.2f", nlv)
                 return nlv
         raise RuntimeError("NetLiquidation not found in accountSummary")
 
@@ -41,12 +42,11 @@ class PortfolioManager:
 
         prices: dict[str, float] = {}
         contracts = [Stock(t, "SMART", "USD") for t in tickers]
-        self._ib.qualifyContracts(*contracts)
+        await self._ib.qualifyContractsAsync(*contracts)
 
         for contract in contracts:
             ticker_obj = self._ib.reqMktData(contract, snapshot=True)
-            # allow the event loop to process the snapshot
-            await self._ib.sleepAsync(0.5)
+            await asyncio.sleep(0.5)
             price = ticker_obj.marketPrice()
             if price and price == price:  # guard against NaN
                 prices[contract.symbol] = float(price)

@@ -36,7 +36,7 @@ class OrderRouter:
 
         for od in orders:
             contract = Stock(od.ticker, "SMART", "USD")
-            self._ib.qualifyContracts(contract)
+            await self._ib.qualifyContractsAsync(contract)
 
             ib_order = self._build_order(od, order_type, limit_prices)
 

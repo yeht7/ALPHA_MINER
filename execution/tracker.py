@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,7 +63,7 @@ class TradeTracker:
             if asyncio.get_event_loop().time() >= deadline:
                 logger.warning("Timeout: %d orders still pending", len(remaining))
                 break
-            await self._ib.sleepAsync(0.5)
+            await asyncio.sleep(0.5)
 
     def flush(self, tag: str = "") -> Path | None:
         """Write accumulated fills to a timestamped Parquet file and clear buffer."""
